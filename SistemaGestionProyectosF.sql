@@ -205,7 +205,7 @@ create table Proyectos.BITACORA (
     fecha_registro date not null default getdate(),
     horas_trabajadas decimal(5,2) not null default 0.00,
     descripcion_actividad nvarchar(max) not null,
-    porcentaje_avance decimal(5,2) not null default 0.00,
+    percentage_avance decimal(5,2) not null default 0.00,
     
     created_at datetime constraint df_bitacora_created_at default getdate(),
     updated_at datetime null,
@@ -487,7 +487,7 @@ insert into Proyectos.ENTREGABLE (id_proyecto, nombre, criterio_aceptacion, esta
 (4, 'Reporte Ejecutivo de Mitigación', 'Firmado por el especialista y libre de hallazgos críticos sin resolver.', 'Aceptado', '2026-03-08');
 go
 
-insert into Proyectos.BITACORA (id_tarea, id_colaborador, fecha_registro, horas_trabajadas, descripcion_actividad, porcentaje_avance) values
+insert into Proyectos.BITACORA (id_tarea, id_colaborador, fecha_registro, horas_trabajadas, descripcion_actividad, percentage_avance) values
 (1, 1, '2026-01-15', 4.5, 'Reunión de requerimientos iniciales para el diseño del ERP.', 20.00),
 (1, 2, '2026-01-20', 8.0, 'Modelado y normalización de las tablas del inventario.', 70.00),
 (3, 3, '2026-02-16', 6.0, 'Creación de scripts de infraestructura como código usando Terraform.', 100.00),
@@ -574,9 +574,96 @@ insert into Proyectos.COLABORADOR_IDIOMA (id_colaborador, id_idioma, nivel_idiom
 (3, 2, 'B1');
 go
 
+-- =====================================================================
+--                    OPERACIONES ALTER TABLE 
+-- =====================================================================
+print '====================================================================='
+print '                   EJECUTANDO ALTER TABLE...'
+print '====================================================================='
+go
+
+-- ALTER 1: Agregar una nueva columna a la tabla de Proyectos (correo de contacto o cliente corporativo)
+alter table Proyectos.PROYECTO 
+add cliente_corporativo varchar(150) null;
+go
+
+-- ALTER 2: Modificar el tipo de dato o longitud de una columna existente
+alter table Catalogos.PROVEEDOR 
+alter column telefono varchar(35);
+go
+
+-- ALTER 3: Agregar una restricción CHECK nueva a la tabla COLABORADOR (asegurar que las horas máximas no superen las 60 por ley de salud laboral)
+alter table Catalogos.COLABORADOR 
+add constraint CK_HORAS_MAX_LEGAL check (horas_max_semana <= 60);
+go
+
+-- Verificación de los cambios estructurales mediante consulta al catálogo del sistema
+print 'Verificando columnas agregadas en PROYECTO...'
+select table_schema, table_name, column_name, data_type, character_maximum_length 
+from information_schema.columns 
+where table_name = 'PROYECTO' and column_name = 'cliente_corporativo';
+go
+
+
+-- =====================================================================
+--                   OPERACIONES DELETE
+-- =====================================================================
+print '====================================================================='
+print '                  EJECUTANDO DELETES...'
+print '====================================================================='
+go
+
+-- CASO DELETE 1: Eliminación directa de un registro sin dependencias activas.
+-- El idioma 'Portugués' (id 3) no está asignado a ningún colaborador en la tabla intermedia.
+print 'Antes del DELETE 1 (Idiomas disponibles):'
+select id_idioma, nombre_idioma from Catalogos.IDIOMA;
+
+delete from Catalogos.IDIOMA 
+where nombre_idioma = 'Portugués';
+
+print 'Después del DELETE 1 (Idiomas disponibles):'
+select id_idioma, nombre_idioma from Catalogos.IDIOMA;
+go
+
+
+-- CASO DELETE 2: Eliminación en cadena controlada / con dependencias.
+-- Intentar borrar el proyecto 'Auditoría de Ciberseguridad 2026' (id 4) fallaría debido a las llaves foráneas 
+-- en HITO, ADQUISICION, ENTREGABLE, PRESUPUESTO, GASTO_PRESUPUESTARIO y ASIGNACION.
+-- Procedemos a eliminar de abajo hacia arriba de forma segura:
+
+print 'Antes del DELETE 2 - Presupuestos vigentes:'
+select id_proyecto, monto_aprobado, estado_presupuesto from Financiero.PRESUPUESTO;
+
+-- 1º Limpiar dependencias del esquema Financiero de ese proyecto específico
+delete from Financiero.GASTO_PRESUPUESTARIO where id_proyecto = 4;
+delete from Financiero.ADQUISICION where id_proyecto = 4;
+delete from Financiero.PRESUPUESTO where id_proyecto = 4;
+
+-- 2º Limpiar dependencias del esquema Proyectos de ese proyecto específico
+delete from Proyectos.RETROALIMENTACION where id_proyecto = 4;
+delete from Proyectos.ENTREGABLE where id_proyecto = 4;
+delete from Proyectos.ASIGNACION where id_proyecto = 4;
+
+-- Como las tareas e hitos pueden tener incidencias o bitácoras, limpiamos si existiesen (en cascada manual)
+delete from Proyectos.INCIDENCIA where id_tarea in (select id_tarea from Proyectos.TAREA where id_proyecto = 4);
+delete from Proyectos.TAREA_RESPONSABLE where id_tarea in (select id_tarea from Proyectos.TAREA where id_proyecto = 4);
+delete from Proyectos.DEPENDENCIA_TAREA where id_tarea in (select id_tarea from Proyectos.TAREA honesty where id_proyecto = 4);
+delete from Proyectos.BITACORA where id_tarea in (select id_tarea from Proyectos.TAREA where id_proyecto = 4);
+
+delete from Proyectos.TAREA where id_proyecto = 4;
+delete from Proyectos.HITO where id_proyecto = 4;
+
+-- 3º Finalmente eliminamos el registro maestro en PROYECTO de forma segura
+delete from Proyectos.PROYECTO 
+where id_proyecto = 4;
+
+print 'Después del DELETE 2 - Presupuestos y Proyectos restantes:'
+select id_proyecto, nombre, estado from Proyectos.PROYECTO;
+go
+
 
 -- ==========================================
--- 4. QUERIES DE CONTROL 
+-- 4. CONSULTAS DE CONTROL 
 -- ==========================================
 
 print '====================================================================='
@@ -638,7 +725,7 @@ select
     p.nombre as Proyecto,
     count(distinct b.id_registro) as [Cantidad Registros],
     sum(b.horas_trabajadas) as [Total Horas Reales],
-    avg(b.porcentaje_avance) as [Progreso Promedio Registrado]
+    avg(b.percentage_avance) as [Progreso Promedio Registrado]
 from Proyectos.PROYECTO p
 inner join Proyectos.TAREA t on p.id_proyecto = t.id_proyecto
 inner join Proyectos.BITACORA b on t.id_tarea = b.id_tarea
