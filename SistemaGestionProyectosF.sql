@@ -205,7 +205,7 @@ create table Proyectos.BITACORA (
     fecha_registro date not null default getdate(),
     horas_trabajadas decimal(5,2) not null default 0.00,
     descripcion_actividad nvarchar(max) not null,
-    percentage_avance decimal(5,2) not null default 0.00,
+    porcentaje_avance decimal(5,2) not null default 0.00, -- Corregido typo de 'percentage' a 'porcentaje'
     
     created_at datetime constraint df_bitacora_created_at default getdate(),
     updated_at datetime null,
@@ -404,9 +404,11 @@ create table Proyectos.COLABORADOR_IDIOMA (
 go
 
 
--- ==========================================
--- 1. INSERTS EN TABLAS MAESTRAS (CON ESQUEMAS)
--- ==========================================
+-- =====================================================================
+-- 1. INSERTS EN TABLAS MAESTRAS (CON CONFIGURACIÓN DE FECHA UNIVERSAL)
+-- =====================================================================
+set dateformat ymd; -- <--- SOLUCIÓN AL ERROR DE CONVERSIÓN DE FECHAS
+go
 
 insert into Proyectos.PROYECTO (nombre, objetivo, tipo, fecha_inicio, fecha_fin, presupuesto_inicial, estado) values
 ('Sistema ERP Fase 1', 'Desarrollo del módulo de inventario y facturación.', 'Desarrollo de Software', '2026-01-10', '2026-06-30', 45000.00, 'En ejecución'),
@@ -454,6 +456,8 @@ go
 -- ==========================================
 -- 2. INSERTS EN TABLAS DEPENDIENTES
 -- ==========================================
+set dateformat ymd;
+go
 
 insert into Proyectos.HITO (id_proyecto, nombre_hito, fecha_clave, entregable, es_critico) values
 (1, 'Diseño de Base de Datos Aprobado', '2026-02-01', 'Diagrama entidad-relación y scripts DDL.', 1),
@@ -487,7 +491,7 @@ insert into Proyectos.ENTREGABLE (id_proyecto, nombre, criterio_aceptacion, esta
 (4, 'Reporte Ejecutivo de Mitigación', 'Firmado por el especialista y libre de hallazgos críticos sin resolver.', 'Aceptado', '2026-03-08');
 go
 
-insert into Proyectos.BITACORA (id_tarea, id_colaborador, fecha_registro, horas_trabajadas, descripcion_actividad, percentage_avance) values
+insert into Proyectos.BITACORA (id_tarea, id_colaborador, fecha_registro, horas_trabajadas, descripcion_actividad, porcentaje_avance) values
 (1, 1, '2026-01-15', 4.5, 'Reunión de requerimientos iniciales para el diseño del ERP.', 20.00),
 (1, 2, '2026-01-20', 8.0, 'Modelado y normalización de las tablas del inventario.', 70.00),
 (3, 3, '2026-02-16', 6.0, 'Creación de scripts de infraestructura como código usando Terraform.', 100.00),
@@ -536,6 +540,8 @@ go
 -- ==========================================
 -- 3. INSERTS EN TABLAS INTERMEDIAS
 -- ==========================================
+set dateformat ymd;
+go
 
 insert into Proyectos.ASIGNACION (id_colaborador, id_proyecto, horas_asignadas, rol_en_proyecto, fecha_asignacion) values
 (1, 1, 20, 'Gerente de Proyecto', '2026-01-10'),
@@ -575,14 +581,14 @@ insert into Proyectos.COLABORADOR_IDIOMA (id_colaborador, id_idioma, nivel_idiom
 go
 
 -- =====================================================================
---                    OPERACIONES ALTER TABLE 
+-- NUEVA SECCIÓN: OPERACIONES ALTER TABLE (Estructura)
 -- =====================================================================
 print '====================================================================='
-print '                   EJECUTANDO ALTER TABLE...'
+print 'NUEVA SECCIÓN: EJECUTANDO ALTER TABLE...'
 print '====================================================================='
 go
 
--- ALTER 1: Agregar una nueva columna a la tabla de Proyectos (correo de contacto o cliente corporativo)
+-- ALTER 1: Agregar una nueva columna a la tabla de Proyectos
 alter table Proyectos.PROYECTO 
 add cliente_corporativo varchar(150) null;
 go
@@ -592,7 +598,7 @@ alter table Catalogos.PROVEEDOR
 alter column telefono varchar(35);
 go
 
--- ALTER 3: Agregar una restricción CHECK nueva a la tabla COLABORADOR (asegurar que las horas máximas no superen las 60 por ley de salud laboral)
+-- ALTER 3: Agregar una restricción CHECK nueva a la tabla COLABORADOR
 alter table Catalogos.COLABORADOR 
 add constraint CK_HORAS_MAX_LEGAL check (horas_max_semana <= 60);
 go
@@ -606,15 +612,14 @@ go
 
 
 -- =====================================================================
---                   OPERACIONES DELETE
+-- NUEVA SECCIÓN: OPERACIONES DELETE (Manejo Seguro de Datos)
 -- =====================================================================
 print '====================================================================='
-print '                  EJECUTANDO DELETES...'
+print 'NUEVA SECCIÓN: EJECUTANDO DELETES...'
 print '====================================================================='
 go
 
 -- CASO DELETE 1: Eliminación directa de un registro sin dependencias activas.
--- El idioma 'Portugués' (id 3) no está asignado a ningún colaborador en la tabla intermedia.
 print 'Antes del DELETE 1 (Idiomas disponibles):'
 select id_idioma, nombre_idioma from Catalogos.IDIOMA;
 
@@ -627,10 +632,6 @@ go
 
 
 -- CASO DELETE 2: Eliminación en cadena controlada / con dependencias.
--- Intentar borrar el proyecto 'Auditoría de Ciberseguridad 2026' (id 4) fallaría debido a las llaves foráneas 
--- en HITO, ADQUISICION, ENTREGABLE, PRESUPUESTO, GASTO_PRESUPUESTARIO y ASIGNACION.
--- Procedemos a eliminar de abajo hacia arriba de forma segura:
-
 print 'Antes del DELETE 2 - Presupuestos vigentes:'
 select id_proyecto, monto_aprobado, estado_presupuesto from Financiero.PRESUPUESTO;
 
@@ -644,10 +645,10 @@ delete from Proyectos.RETROALIMENTACION where id_proyecto = 4;
 delete from Proyectos.ENTREGABLE where id_proyecto = 4;
 delete from Proyectos.ASIGNACION where id_proyecto = 4;
 
--- Como las tareas e hitos pueden tener incidencias o bitácoras, limpiamos si existiesen (en cascada manual)
+-- Limpieza de cascada manual en tareas asociadas
 delete from Proyectos.INCIDENCIA where id_tarea in (select id_tarea from Proyectos.TAREA where id_proyecto = 4);
 delete from Proyectos.TAREA_RESPONSABLE where id_tarea in (select id_tarea from Proyectos.TAREA where id_proyecto = 4);
-delete from Proyectos.DEPENDENCIA_TAREA where id_tarea in (select id_tarea from Proyectos.TAREA honesty where id_proyecto = 4);
+delete from Proyectos.DEPENDENCIA_TAREA where id_tarea in (select id_tarea from Proyectos.TAREA where id_proyecto = 4);
 delete from Proyectos.BITACORA where id_tarea in (select id_tarea from Proyectos.TAREA where id_proyecto = 4);
 
 delete from Proyectos.TAREA where id_proyecto = 4;
@@ -663,7 +664,7 @@ go
 
 
 -- ==========================================
--- 4. CONSULTAS DE CONTROL 
+-- 4. QUERIES DE CONTROL ORIGINALES
 -- ==========================================
 
 print '====================================================================='
@@ -679,7 +680,7 @@ select
     c.nombre + ' ' + c.apellido as Colaborador,
     p.nombre as Proyecto,
     a.rol_en_proyecto as [Rol Asignado],
-    a.horas_asignadas as [Horas Semanales]
+    a.horas_asignadas as [Horas Semanales] 
 from Catalogos.COLABORADOR c
 inner join Proyectos.ASIGNACION a on c.id_colaborador = a.id_colaborador
 inner join Proyectos.PROYECTO p on a.id_proyecto = p.id_proyecto
@@ -725,7 +726,7 @@ select
     p.nombre as Proyecto,
     count(distinct b.id_registro) as [Cantidad Registros],
     sum(b.horas_trabajadas) as [Total Horas Reales],
-    avg(b.percentage_avance) as [Progreso Promedio Registrado]
+    avg(b.porcentaje_avance) as [Progreso Promedio Registrado]
 from Proyectos.PROYECTO p
 inner join Proyectos.TAREA t on p.id_proyecto = t.id_proyecto
 inner join Proyectos.BITACORA b on t.id_tarea = b.id_tarea
@@ -785,7 +786,7 @@ where ti.prioridad in ('Alta', 'Critica');
 go
 
 print '====================================================================='
-print '5. CONSULTAS DE PERFIL PROFESIONAL (BÚSQUEDA DE TALENTO)'
+print '5. CONSULTAS DE PERFIL PROFESIONAL '
 print '====================================================================='
 go
 
