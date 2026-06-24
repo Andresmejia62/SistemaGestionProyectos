@@ -581,7 +581,7 @@ insert into Proyectos.COLABORADOR_IDIOMA (id_colaborador, id_idioma, nivel_idiom
 go
 
 -- =====================================================================
--- NUEVA SECCIÓN: OPERACIONES ALTER TABLE (Estructura)
+--           OPERACIONES ALTER TABLE (Estructura)
 -- =====================================================================
 print '====================================================================='
 print 'NUEVA SECCIÓN: EJECUTANDO ALTER TABLE...'
@@ -612,7 +612,7 @@ go
 
 
 -- =====================================================================
--- NUEVA SECCIÓN: OPERACIONES DELETE (Manejo Seguro de Datos)
+--        OPERACIONES DELETE (Manejo Seguro de Datos)
 -- =====================================================================
 print '====================================================================='
 print 'NUEVA SECCIÓN: EJECUTANDO DELETES...'
